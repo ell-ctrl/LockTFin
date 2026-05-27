@@ -16,9 +16,7 @@
     @import url('https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@700;800&display=swap');
     * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
     body { margin: 0; background: #0a0a0a; color: #fff; font-family: 'Space Mono', monospace; overflow-x: hidden; }
-    ::-webkit-scrollbar { width: 4px; }
-    ::-webkit-scrollbar-track { background: #0a0a0a; }
-    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+    ::-webkit-scrollbar { display: none; }
     input[type=time]::-webkit-calendar-picker-indicator { filter: invert(1); opacity: 0.4; }
     select option { background: #111; }
     input, select, button, textarea { font-family: 'Space Mono', monospace; }
@@ -40,10 +38,10 @@
     ];
 
     const STORAGE_KEYS = {
-      classes: "jkuat_classes_v2",
-      attendance: "jkuat_attendance_v2",
-      pdfs: "jkuat_pdfs_v2",
-      customUnits: "jkuat_custom_units_v2",
+      classes: "jkuat_classes_v3",
+      attendance: "jkuat_attendance_v3",
+      pdfs: "jkuat_pdfs_v3",
+      customUnits: "jkuat_custom_units_v3",
     };
 
     const saveData = (key, value) => {
@@ -57,6 +55,37 @@
     };
 
     const genId = () => Math.random().toString(36).slice(2, 9);
+
+    function requestNotificationPermission() {
+      if ("Notification" in window && Notification.permission === "default") {
+        Notification.requestPermission();
+      }
+    }
+
+    function scheduleNotification(cls) {
+      if (!("Notification" in window) || Notification.permission !== "granted") return;
+      const now = new Date();
+      const dayMap = { Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+      cls.days.forEach((day) => {
+        const targetDay = dayMap[day];
+        const [h, m] = cls.time.split(":").map(Number);
+        const next = new Date();
+        next.setHours(h, m, 0, 0);
+        let diff = targetDay - now.getDay();
+        if (diff < 0) diff += 7;
+        if (diff === 0 && next <= now) diff = 7;
+        next.setDate(now.getDate() + diff);
+        const ms = next - now - 15 * 60 * 1000;
+        if (ms > 0) {
+          setTimeout(() => {
+            new Notification(`📚 ${cls.unit.split("–")[0].trim()}`, {
+              body: `Lecture starts in 15 mins at ${cls.venue || "Scheduled Hall"}`,
+              icon: "https://emojicdn.elk.sh/📚",
+            });
+          }, ms);
+        }
+      });
+    }
 
     // Icons
     const IconBook = () => (
@@ -74,6 +103,9 @@
     const IconX = () => (
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
     );
+    const IconBell = () => (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+    );
     const IconSearch = () => (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
     );
@@ -85,7 +117,7 @@
       const r = 22, circ = 2 * Math.PI * r;
       const color = pct >= 75 ? "#4ade80" : pct >= 50 ? "#facc15" : "#f87171";
       return (
-        <svg width="60" height="60" viewBox="0 0 60 60">
+        <svg width="60" height="60" viewBox="0 0 60 60" style={{ flexShrink: 0 }}>
           <circle cx="30" cy="30" r={r} fill="none" stroke="#1e1e1e" strokeWidth="5"/>
           <circle cx="30" cy="30" r={r} fill="none" stroke={color} strokeWidth="5"
             strokeDasharray={`${(pct/100)*circ} ${circ}`}
@@ -106,7 +138,7 @@
           display: "flex", alignItems: "center", justifyContent: "center",
           zIndex: 1000, padding: "16px", backdropFilter: "blur(4px)"
         }}>
-          <div style={{ background: "#111", border: "1px solid #2a2a2a", borderRadius: "12px", width: "100%", maxWidth: "440px", padding: "24px" }}>
+          <div style={{ background: "#111", border: "1px solid #2a2a2a", borderRadius: "12px", width: "100%", maxWidth: "440px", padding: "24px", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
               <span style={{ color: "#e5e5e5", fontSize: "14px", fontWeight: 700 }}>{title}</span>
               <button onClick={onClose} style={{ background: "none", border: "none", color: "#666", cursor: "pointer" }}><IconX /></button>
@@ -134,37 +166,45 @@
       const [days, setDays] = useState([]);
       const [time, setTime] = useState("08:00");
       const [venue, setVenue] = useState("");
+      const [lecturer, setLecturer] = useState("");
 
       const toggleDay = (d) => setDays(p => p.includes(d) ? p.filter(x => x !== d) : [...p, d]);
       const effectiveUnit = unit === "Other" ? customUnit : unit;
 
       return (
-        <Modal title="ADD CLASS" onClose={onClose}>
-          <label style={labelStyle}>Unit</label>
+        <Modal title="ADD RECURRING CLASS" onClose={onClose}>
+          <label style={labelStyle}>Unit Module</label>
           <select value={unit} onChange={e => setUnit(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
             {allUnits.map(u => <option key={u}>{u}</option>)}
           </select>
           {unit === "Other" && <input style={inputStyle} value={customUnit} onChange={e => setCustomUnit(e.target.value)} placeholder="e.g. EMG 2205 – Drawing" />}
-          <label style={labelStyle}>Days</label>
+          
+          <label style={labelStyle}>Select Days</label>
           <div style={{ display: "flex", gap: "6px", marginBottom: "12px", flexWrap: "wrap" }}>
             {DAYS.map(d => (
               <button key={d} onClick={() => toggleDay(d)} style={{
-                padding: "6px 12px", borderRadius: "6px", fontSize: "12px", cursor: "pointer",
+                padding: "8px 12px", borderRadius: "6px", fontSize: "12px", cursor: "pointer",
                 border: days.includes(d) ? "1px solid #c8f764" : "1px solid #2a2a2a",
                 background: days.includes(d) ? "rgba(200,247,100,0.12)" : "#0d0d0d",
                 color: days.includes(d) ? "#c8f764" : "#666",
               }}>{d}</button>
             ))}
           </div>
-          <label style={labelStyle}>Time</label>
+
+          <label style={labelStyle}>Time Slot</label>
           <input type="time" style={inputStyle} value={time} onChange={e => setTime(e.target.value)} />
-          <label style={labelStyle}>Venue</label>
-          <input style={inputStyle} value={venue} onChange={e => setVenue(e.target.value)} placeholder="e.g. LH3, Block C" />
+          
+          <label style={labelStyle}>Venue / Lecture Hall</label>
+          <input style={inputStyle} value={venue} onChange={e => setVenue(e.target.value)} placeholder="e.g. BB204, Tech Wing" />
+          
+          <label style={labelStyle}>Lecturer Name</label>
+          <input style={inputStyle} value={lecturer} onChange={e => setLecturer(e.target.value)} placeholder="e.g. Dr. Kinyua" />
+          
           <button style={btnPrimary} onClick={() => {
             if (!effectiveUnit || days.length === 0) return;
-            onAdd({ id: genId(), unit: effectiveUnit, days, time, venue });
+            onAdd({ id: genId(), unit: effectiveUnit, days, time, venue, lecturer });
             onClose();
-          }}>SAVE CLASS</button>
+          }}>SAVE SYSTEM SCHEDULE</button>
         </Modal>
       );
     }
@@ -176,27 +216,35 @@
       const [title, setTitle] = useState("");
       const [topic, setTopic] = useState("");
       const [link, setLink] = useState("");
+      const [notes, setNotes] = useState("");
 
       const effectiveUnit = unit === "Other" ? customUnit : unit;
 
       return (
-        <Modal title="ADD PDF / RESOURCE" onClose={onClose}>
-          <label style={labelStyle}>Unit</label>
+        <Modal title="VAULT DATA INGESTION" onClose={onClose}>
+          <label style={labelStyle}>Associated Unit</label>
           <select value={unit} onChange={e => setUnit(e.target.value)} style={{ ...inputStyle, appearance: "none" }}>
             {allUnits.map(u => <option key={u}>{u}</option>)}
           </select>
-          {unit === "Other" && <input style={inputStyle} value={customUnit} onChange={e => setCustomUnit(e.target.value)} placeholder="e.g. EMG 2205" />}
+          {unit === "Other" && <input style={inputStyle} value={customUnit} onChange={e => setCustomUnit(e.target.value)} placeholder="e.g. SPH 2174" />}
+          
           <label style={labelStyle}>Document Title</label>
-          <input style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Week 4 Lecture Notes" />
-          <label style={labelStyle}>Topic / Chapter</label>
-          <input style={inputStyle} value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Miller Indices" />
-          <label style={labelStyle}>Link (optional)</label>
-          <input style={inputStyle} value={link} onChange={e => setLink(e.target.value)} placeholder="Google Drive link..." />
+          <input style={inputStyle} value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Tutorial Sheet 2" />
+          
+          <label style={labelStyle}>Topic / Focus Area</label>
+          <input style={inputStyle} value={topic} onChange={e => setTopic(e.target.value)} placeholder="e.g. Stress-Strain Diagrams" />
+          
+          <label style={labelStyle}>Storage Link (Drive / Cloud URL)</label>
+          <input style={inputStyle} value={link} onChange={e => setLink(e.target.value)} placeholder="Paste asset link..." />
+          
+          <label style={labelStyle}>Quick Technical Notes</label>
+          <textarea style={{ ...inputStyle, resize: "vertical", minHeight: "70px" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Formula sheets, references, or context..." />
+          
           <button style={btnPrimary} onClick={() => {
             if (!title || !effectiveUnit) return;
-            onAdd({ id: genId(), unit: effectiveUnit, title, topic, link, added: new Date().toLocaleDateString("en-GB") });
+            onAdd({ id: genId(), unit: effectiveUnit, title, topic, link, notes, added: new Date().toLocaleDateString("en-GB") });
             onClose();
-          }}>SAVE RESOURCE</button>
+          }}>COMMIT TO VAULT</button>
         </Modal>
       );
     }
@@ -206,19 +254,78 @@
       const attended = logs.filter(l => l.attended).length;
       const pct = logs.length ? (attended / logs.length) * 100 : 0;
       return (
-        <Modal title={`ATTENDANCE · ${cls.unit.split("–")[0].trim()}`} onClose={onClose}>
-          <div style={{ display: "flex", gap: "14px", background: "#0d0d0d", padding: "14px", borderRadius: "10px", marginBottom: "16px" }}>
+        <Modal title={`COMPLIANCE ANALYTICS · ${cls.unit.split("–")[0].trim()}`} onClose={onClose}>
+          <div style={{ display: "flex", gap: "14px", background: "#0d0d0d", padding: "14px", borderRadius: "10px", marginBottom: "16px", alignItems: "center" }}>
             <AttendanceRing pct={pct} />
             <div>
-              <div style={{ fontSize: "13px", color: "#e5e5e5" }}>{attended}/{logs.length} checked slots</div>
-              <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>{cls.days.join(", ")} · {cls.time}</div>
+              <div style={{ fontSize: "13px", color: "#e5e5e5", fontWeight: 700 }}>{attended} of {logs.length} Blocks Attended</div>
+              <div style={{ fontSize: "11px", color: "#555", marginTop: "4px" }}>{cls.days.join(", ")} @ {cls.time}</div>
             </div>
           </div>
-          <div style={{ display: "flex", gap: "8px" }}>
-            <button onClick={() => { onLog(cls.id, true); onClose(); }} style={{ ...btnPrimary, background: "#4ade80", flex: 1 }}>✓ ATTENDED</button>
-            <button onClick={() => { onLog(cls.id, false); onClose(); }} style={{ ...btnPrimary, background: "#f87171", flex: 1 }}>✗ MISSED</button>
+          <div style={{ display: "flex", gap: "8px", marginBottom: "16px" }}>
+            <button onClick={() => { onLog(cls.id, true); onClose(); }} style={{ ...btnPrimary, background: "#4ade80", flex: 1 }}>✓ PRESENT</button>
+            <button onClick={() => { onLog(cls.id, false); onClose(); }} style={{ ...btnPrimary, background: "#f87171", flex: 1, color: "#fff" }}>✗ ABSENT</button>
+          </div>
+          
+          <label style={labelStyle}>Recent Logging History</label>
+          <div style={{ maxHeight: "150px", overflowY: "auto" }}>
+            {logs.length === 0 ? (
+              <div style={{ fontSize: "11px", color: "#333", padding: "6px" }}>No historical sessions compiled yet.</div>
+            ) : (
+              [...logs].reverse().slice(0, 5).map((l, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "8px", background: "#080808", border: "1px solid #1a1a1a", borderRadius: "6px", marginBottom: "4px", fontSize: "11px" }}>
+                  <span style={{ color: "#666" }}>{l.date}</span>
+                  <span style={{ color: l.attended ? "#4ade80" : "#f87171", fontWeight: 700 }}>{l.attended ? "PRESENT" : "ABSENT"}</span>
+                </div>
+              ))
+            )}
           </div>
         </Modal>
+      );
+    }
+
+    function ClassCard({ cls, attendance, onLog, onDelete }) {
+      const [showLog, setShowLog] = useState(false);
+      const logs = attendance[cls.id] || [];
+      const attended = logs.filter(l => l.attended).length;
+      const pct = logs.length ? (attended / logs.length) * 100 : 0;
+
+      return (
+        <>
+          <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: "10px", padding: "14px 16px", marginBottom: "10px", display: "flex", alignItems: "center", gap: "14px" }}>
+            <AttendanceRing pct={pct} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ color: "#e5e5e5", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cls.unit}</div>
+              <div style={{ color: "#555", fontSize: "11px", marginTop: "4px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {cls.days.join(" · ")} | {cls.time} {cls.venue && `· ${cls.venue}`}
+              </div>
+              {cls.lecturer && <div style={{ color: "#3a3a3a", fontSize: "10px", marginTop: "2px" }}>{cls.lecturer}</div>}
+            </div>
+            <div style={{ display: "flex", gap: "6px" }}>
+              <button onClick={() => setShowLog(true)} style={{ padding: "7px 12px", background: "rgba(200,247,100,0.1)", border: "1px solid rgba(200,247,100,0.25)", borderRadius: "6px", color: "#c8f764", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>LOG</button>
+              <button onClick={() => onDelete(cls.id)} style={{ padding: "7px 8px", background: "transparent", border: "none", color: "#222", cursor: "pointer" }}><IconTrash /></button>
+            </div>
+          </div>
+          {showLog && <LogModal cls={cls} attendance={attendance} onLog={onLog} onClose={() => setShowLog(false)} />}
+        </>
+      );
+    }
+
+    function PdfCard({ pdf, onDelete }) {
+      const unitCode = pdf.unit.split("–")[0].trim();
+      return (
+        <div style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: "10px", padding: "14px 16px", marginBottom: "8px", display: "flex", gap: "12px", alignItems: "center" }}>
+          <div style={{ width: "38px", height: "38px", borderRadius: "8px", background: "rgba(200,247,100,0.08)", border: "1px solid rgba(200,247,100,0.15)", display: "flex", alignItems: "center", justifyContent: "center", color: "#c8f764", flexShrink: 0 }}><IconFile /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ color: "#e5e5e5", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{pdf.title}</div>
+            <div style={{ fontSize: "10px", color: "#555", marginTop: "4px" }}>{unitCode} {pdf.topic && `· ${pdf.topic}`}</div>
+            {pdf.notes && <div style={{ color: "#444", fontSize: "11px", marginTop: "4px", borderLeft: "1px solid #222", paddingLeft: "6px" }}>{pdf.notes}</div>}
+          </div>
+          <div style={{ display: "flex", gap: "12px", alignItems: "center" }}>
+            {pdf.link && <a href={pdf.link} target="_blank" rel="noreferrer" style={{ fontSize: "11px", color: "#60a5fa", textDecoration: "none", fontWeight: 700 }}>OPEN →</a>}
+            <button onClick={() => onDelete(pdf.id)} style={{ background: "none", border: "none", color: "#222", cursor: "pointer", padding: 0 }}><IconTrash /></button>
+          </div>
+        </div>
       );
     }
 
@@ -230,10 +337,10 @@
       const [customUnits, setCustomUnits] = useState([]);
       const [showAddClass, setShowAddClass] = useState(false);
       const [showAddPdf, setShowAddPdf] = useState(false);
-      const [activeLogClass, setActiveLogClass] = useState(null);
       const [pdfSearch, setPdfSearch] = useState("");
       const [pdfFilter, setPdfFilter] = useState("All");
       const [loaded, setLoaded] = useState(false);
+      const [notifPerm, setNotifPerm] = useState(false);
 
       useEffect(() => {
         setClasses(loadData(STORAGE_KEYS.classes, []));
@@ -241,103 +348,9 @@
         setPdfs(loadData(STORAGE_KEYS.pdfs, []));
         setCustomUnits(loadData(STORAGE_KEYS.customUnits, []));
         setLoaded(true);
+        if ("Notification" in window) setNotifPerm(Notification.permission === "granted");
       }, []);
 
       useEffect(() => { if (loaded) saveData(STORAGE_KEYS.classes, classes); }, [classes, loaded]);
       useEffect(() => { if (loaded) saveData(STORAGE_KEYS.attendance, attendance); }, [attendance, loaded]);
-      useEffect(() => { if (loaded) saveData(STORAGE_KEYS.pdfs, pdfs); }, [pdfs, loaded]);
-      useEffect(() => { if (loaded) saveData(STORAGE_KEYS.customUnits, customUnits); }, [customUnits, loaded]);
-
-      const addClass = useCallback((cls) => {
-        if (cls.unit !== "Other" && !UNITS.includes(cls.unit)) {
-          setCustomUnits(p => p.includes(cls.unit) ? p : [...p, cls.unit]);
-        }
-        setClasses(p => [...p, cls]);
-      }, []);
-
-      const addPdf = useCallback((pdf) => {
-        if (!UNITS.includes(pdf.unit)) {
-          setCustomUnits(p => p.includes(pdf.unit) ? p : [...p, pdf.unit]);
-        }
-        setPdfs(p => [pdf, ...p]);
-      }, []);
-
-      const logAttendance = useCallback((clsId, attended) => {
-        setAttendance(prev => ({
-          ...prev,
-          [clsId]: [...(prev[clsId] || []), { date: new Date().toLocaleDateString("en-GB"), attended }],
-        }));
-      }, []);
-
-      const deleteClass = (id) => setClasses(p => p.filter(c => c.id !== id));
-      const deletePdf = (id) => setPdfs(p => p.filter(f => f.id !== id));
-
-      const allUnits = ["All", ...Array.from(new Set(pdfs.map(p => p.unit.split("–")[0].trim())))];
-      const filteredPdfs = pdfs.filter(p => {
-        const unitCode = p.unit.split("–")[0].trim();
-        return (pdfFilter === "All" || unitCode === pdfFilter) && (!pdfSearch || p.title.toLowerCase().includes(pdfSearch.toLowerCase()));
-      });
-
-      const totalAttended = Object.values(attendance).flat().filter(l => l.attended).length;
-      const totalLogged = Object.values(attendance).flat().length;
-      const overallPct = totalLogged ? Math.round((totalAttended / totalLogged) * 100) : 0;
-
-      if (!loaded) return <div style={{ minHeight: "100vh", background: "#0a0a0a", display: "flex", alignItems: "center", justifyContent: "center", color: "#c8f764" }}>LOADING...</div>;
-
-      return (
-        <div style={{ minHeight: "100vh", background: "#0a0a0a", paddingBottom: "40px" }}>
-          <div style={{ borderBottom: "1px solid #1a1a1a", padding: "20px 20px 0" }}>
-            <div style={{ maxWidth: "640px", margin: "0 auto" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px" }}>
-                <div>
-                  <div style={{ fontFamily: "'Syne', sans-serif", fontSize: "22px", fontWeight: 800, color: "#e5e5e5" }}>JKUAT <span style={{ color: "#c8f764" }}>LOCK-IN</span></div>
-                  <div style={{ fontSize: "10px", color: "#444", letterSpacing: "0.1em", marginTop: "2px" }}>MECHATRONICS · SEM 2</div>
-                </div>
-                {totalLogged > 0 && (
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: "24px", fontWeight: 700, color: overallPct >= 75 ? "#4ade80" : "#f87171" }}>{overallPct}%</div>
-                    <div style={{ fontSize: "10px", color: "#444" }}>OVERALL ATT.</div>
-                  </div>
-                )}
-              </div>
-              <div style={{ display: "flex" }}>
-                <button onClick={() => setTab("classes")} style={{ flex: 1, background: "none", border: "none", borderBottom: tab === "classes" ? "2px solid #c8f764" : "2px solid transparent", color: tab === "classes" ? "#c8f764" : "#444", padding: "10px 0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" }}><IconCalendar /> CLASSES</button>
-                <button onClick={() => setTab("pdfs")} style={{ flex: 1, background: "none", border: "none", borderBottom: tab === "pdfs" ? "2px solid #c8f764" : "2px solid transparent", color: tab === "pdfs" ? "#c8f764" : "#444", padding: "10px 0", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: "7px" }}><IconBook /> RESOURCES</button>
-              </div>
-            </div>
-          </div>
-
-          <div style={{ maxWidth: "640px", margin: "0 auto", padding: "20px" }}>
-            {tab === "classes" && (
-              <>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-                  <span style={{ fontSize: "11px", color: "#444" }}>{classes.length} RECURRING MODULES</span>
-                  <button onClick={() => setShowAddClass(true)} style={{ background: "#c8f764", border: "none", borderRadius: "8px", padding: "8px 14px", color: "#0a0a0a", fontSize: "11px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px" }}><IconPlus /> ADD CLASS</button>
-                </div>
-                {classes.length === 0 ? (
-                  <div style={{ border: "1px dashed #1e1e1e", borderRadius: "12px", padding: "40px", textAlign: "center", color: "#444", fontSize: "12px" }}>No classes added yet. Tap ADD CLASS to lock in.</div>
-                ) : (
-                  classes.map(cls => {
-                    const logs = attendance[cls.id] || [];
-                    const pct = logs.length ? (logs.filter(l => l.attended).length / logs.length) * 100 : 0;
-                    return (
-                      <div key={cls.id} style={{ background: "#111", border: "1px solid #1e1e1e", borderRadius: "10px", padding: "14px 16px", marginBottom: "10px", display: "flex", alignItems: "center", gap: "14px" }}>
-                        <AttendanceRing pct={pct} />
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ color: "#e5e5e5", fontSize: "13px", fontWeight: 700, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{cls.unit}</div>
-                          <div style={{ color: "#555", fontSize: "11px", marginTop: "4px" }}>{cls.days.join(" · ")} | {cls.time} {cls.venue && `· ${cls.venue}`}</div>
-                        </div>
-                        <div style={{ display: "flex", gap: "6px" }}>
-                          <button onClick={() => setActiveLogClass(cls)} style={{ padding: "7px 12px", background: "rgba(200,247,100,0.1)", border: "1px solid rgba(200,247,100,0.25)", borderRadius: "6px", color: "#c8f764", fontSize: "11px", cursor: "pointer", fontWeight: 700 }}>LOG</button>
-                          <button onClick={() => deleteClass(cls.id)} style={{ padding: "7px 8px", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.15)", borderRadius: "6px", color: "#f87171", cursor: "pointer" }}><IconTrash /></button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </>
-            )}
-
-            {tab === "pdfs" && (
-              <>
-                
+      useEffect(() => { if (loaded)
